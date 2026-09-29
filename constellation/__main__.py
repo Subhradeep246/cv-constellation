@@ -30,8 +30,7 @@ from .metrics import score_scene
 
 def main():
     parser = argparse.ArgumentParser(description="Local constellation detection pipeline")
-    parser.add_argument("command", choices=["audit", "evaluate", "predict", "oracle-identify",
-                                            "robust-evaluate", "robust-predict", "robust-probe"])
+    parser.add_argument("command", choices=["audit", "evaluate", "predict", "oracle-identify"])
     parser.add_argument("--data", type=Path, default=DEFAULT_DATA)
     parser.add_argument("--output", type=Path, default=Path("outputs"))
     parser.add_argument("--scene", help="Select one scene for development; never used by the algorithm")
@@ -84,11 +83,6 @@ def main():
                         help="Optional shared cache directory for content-checked NCC candidates")
     parser.add_argument("--no-preprocess-probe", action="store_true",
                         help="Skip the optional training-only preprocess comparison during audit")
-    parser.add_argument("--robust-cache-dir", type=Path,
-                        help="Cache for the robust engine; use only caches created locally by this code")
-    parser.add_argument("--robust-channel-weights", nargs=3, type=float,
-                        metavar=("RAW", "BANDPASS", "HIGHPASS"), default=(1.0, 1.0, 1.0),
-                        help="Experimental exact-match channel weights; baseline is 1 1 1")
     args = parser.parse_args()
     if (args.sources < 1 or args.top_k < 1 or args.refine_candidates < 1 or
             args.grid_step < 0 or args.threads < 1):
@@ -122,28 +116,6 @@ def main():
         parser.error("--confident-fullres-hough requires --fullres-hough")
     if args.likelihood_hough and not (args.fullres_hough and args.bright_star_weight):
         parser.error("--likelihood-hough requires --fullres-hough and --bright-star-weight")
-    if args.command in ("robust-evaluate", "robust-predict", "robust-probe"):
-        if (not all(np.isfinite(weight) and weight >= 0 for weight in args.robust_channel_weights)
-                or sum(args.robust_channel_weights) <= 0):
-            parser.error("--robust-channel-weights must be finite, nonnegative, and not all zero")
-        if args.command == "robust-predict" and tuple(args.robust_channel_weights) != (1.0, 1.0, 1.0):
-            print("WARNING: non-default channel weights are experimental; local training gains do not imply a better submission", flush=True)
-        if args.limit_patches is not None:
-            parser.error("--limit-patches is not supported by the robust engine")
-        if args.command == "robust-predict" and args.scene:
-            parser.error("--scene is disallowed for full submission prediction")
-        if args.command == "robust-probe" and not args.scene:
-            parser.error("robust-probe requires --scene")
-        from .robust_runner import run_robust
-        path = run_robust(
-            data=args.data, output=args.output,
-            cache=args.robust_cache_dir or args.output / "robust-cache",
-            evaluate=args.command == "robust-evaluate", scene=args.scene,
-            probe=args.command == "robust-probe",
-            channel_weights=tuple(args.robust_channel_weights),
-        )
-        print(f"Validated robust output: {path.resolve()}", flush=True)
-        return
     cv2.setNumThreads(max(1, args.threads))
     cv2.setRNGSeed(17)
     patterns = load_patterns(args.data / "patterns")
